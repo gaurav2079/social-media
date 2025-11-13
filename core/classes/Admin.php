@@ -66,25 +66,21 @@ class Admin {
         }
     }
     
-    // Fixed method with correct column names for your database
     public static function sendFlagNotification($tweet_id, $admin_id, $reason = "inappropriate content") {
         $db = self::getDB();
         
         try {
-            // Get tweet owner information
             $stmt = $db->prepare("
                 SELECT p.user_id 
                 FROM posts p 
-                JOIN tweets t ON p.id = t.post_id 
-                WHERE t.post_id = ?
+                WHERE p.id = ?
             ");
             $stmt->execute([$tweet_id]);
-            $tweet = $stmt->fetch();
+            $post = $stmt->fetch();
             
-            if ($tweet && isset($tweet->user_id)) {
-                $user_id = $tweet->user_id;
+            if ($post && isset($post->user_id)) {
+                $user_id = $post->user_id;
                 
-                // Insert notification with CORRECT column names for your database
                 $stmt = $db->prepare("
                     INSERT INTO notifications (notify_for, notify_from, target, type, reason, time) 
                     VALUES (?, ?, ?, 'flag', ?, NOW())
@@ -104,7 +100,6 @@ class Admin {
     }
     
     public static function flagTweet($tweet_id, $admin_id, $reason = "Content policy violation") {
-        // Simply send notification for now
         return self::sendFlagNotification($tweet_id, $admin_id, $reason);
     }
     
@@ -112,10 +107,8 @@ class Admin {
         $db = self::getDB();
         $offset = ($page - 1) * $limit;
         
-        // Build the base query
         $sql = "SELECT u.* FROM users u";
         
-        // Add search condition
         if (!empty($search)) {
             $sql .= " WHERE u.username LIKE ? OR u.name LIKE ? OR u.email LIKE ?";
         }
@@ -138,11 +131,9 @@ class Admin {
         $stmt->execute();
         $users = $stmt->fetchAll(PDO::FETCH_OBJ);
         
-        // Add counts for each user
         foreach ($users as $user) {
             try {
-                // Tweet count
-                $stmt = $db->prepare("SELECT COUNT(*) as count FROM tweets WHERE post_id = ?");
+                $stmt = $db->prepare("SELECT COUNT(*) as count FROM posts WHERE user_id = ?");
                 $stmt->execute([$user->id]);
                 $user->tweet_count = $stmt->fetch()->count;
             } catch (PDOException $e) {
@@ -150,7 +141,6 @@ class Admin {
             }
             
             try {
-                // Following count
                 $stmt = $db->prepare("SELECT COUNT(*) as count FROM follow WHERE sender = ?");
                 $stmt->execute([$user->id]);
                 $user->following_count = $stmt->fetch()->count;
@@ -159,7 +149,6 @@ class Admin {
             }
             
             try {
-                // Followers count
                 $stmt = $db->prepare("SELECT COUNT(*) as count FROM follow WHERE receiver = ?");
                 $stmt->execute([$user->id]);
                 $user->followers_count = $stmt->fetch()->count;
@@ -176,7 +165,6 @@ class Admin {
         $offset = ($page - 1) * $limit;
         
         try {
-            // Build the correct query with proper joins
             $sql = "SELECT t.*, 
                            p.user_id,
                            p.post_on as tweet_date,
@@ -187,7 +175,6 @@ class Admin {
                     JOIN posts p ON t.post_id = p.id 
                     JOIN users u ON p.user_id = u.id";
             
-            // Add search condition
             if (!empty($search)) {
                 $sql .= " WHERE t.status LIKE ? OR u.username LIKE ? OR u.name LIKE ?";
             }
@@ -211,32 +198,28 @@ class Admin {
             $stmt->execute();
             $tweets = $stmt->fetchAll(PDO::FETCH_OBJ);
             
-            // Add engagement counts
             foreach ($tweets as $tweet) {
                 $tweet_id = $tweet->post_id;
                 
                 if ($tweet_id) {
-                    // Like count
                     try {
-                        $stmt = $db->prepare("SELECT COUNT(*) as count FROM likes WHERE tweetID = ?");
+                        $stmt = $db->prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?");
                         $stmt->execute([$tweet_id]);
                         $tweet->like_count = $stmt->fetch()->count;
                     } catch (PDOException $e) {
                         $tweet->like_count = 0;
                     }
                     
-                    // Retweet count
                     try {
-                        $stmt = $db->prepare("SELECT COUNT(*) as count FROM retweets WHERE tweetID = ?");
+                        $stmt = $db->prepare("SELECT COUNT(*) as count FROM retweets WHERE post_id = ?");
                         $stmt->execute([$tweet_id]);
                         $tweet->retweet_count = $stmt->fetch()->count;
                     } catch (PDOException $e) {
                         $tweet->retweet_count = 0;
                     }
                     
-                    // Comment count
                     try {
-                        $stmt = $db->prepare("SELECT COUNT(*) as count FROM comments WHERE tweetID = ?");
+                        $stmt = $db->prepare("SELECT COUNT(*) as count FROM comments WHERE post_id = ?");
                         $stmt->execute([$tweet_id]);
                         $tweet->comment_count = $stmt->fetch()->count;
                     } catch (PDOException $e) {
@@ -262,7 +245,6 @@ class Admin {
         $offset = ($page - 1) * $limit;
         
         try {
-            // First check if reports table exists
             $stmt = $db->query("SHOW TABLES LIKE 'reports'");
             $table_exists = $stmt->fetch();
             
@@ -271,7 +253,6 @@ class Admin {
                 return [];
             }
             
-            // Build the query with proper joins
             $sql = "
                 SELECT r.*, 
                        u.username as reporter_username, 
@@ -298,9 +279,7 @@ class Admin {
             
             $reports = $stmt->fetchAll(PDO::FETCH_OBJ);
             
-            // If no reports found, try alternative table structure
             if (empty($reports)) {
-                // Alternative query without some joins
                 $sql = "
                     SELECT r.*, 
                            'Unknown' as reporter_username,
@@ -332,66 +311,294 @@ class Admin {
         }
     }
     
+    // FIXED: Delete tweet method that properly handles both posts and tweets tables
     public static function deleteTweet($tweet_id, $admin_id) {
         $db = self::getDB();
         
         try {
             $db->beginTransaction();
             
-            // Get tweet info for logging and notification
-            $stmt = $db->prepare("
-                SELECT t.*, p.user_id 
-                FROM tweets t 
-                JOIN posts p ON t.post_id = p.id 
-                WHERE t.post_id = ?
-            ");
-            $stmt->execute([$tweet_id]);
-            $tweet = $stmt->fetch(PDO::FETCH_OBJ);
+            error_log("Starting deletion process for tweet ID: " . $tweet_id);
             
-            if (!$tweet) {
-                throw new Exception("Tweet not found");
+            // Check if tweet exists in posts table
+            $stmt = $db->prepare("SELECT p.*, u.username, u.name FROM posts p 
+                                JOIN users u ON p.user_id = u.id 
+                                WHERE p.id = ?");
+            $stmt->execute([$tweet_id]);
+            $post = $stmt->fetch(PDO::FETCH_OBJ);
+            
+            if (!$post) {
+                throw new Exception("Post not found with ID: $tweet_id");
             }
             
-            // Send notification to user before deleting
-            self::sendFlagNotification($tweet_id, $admin_id, "Your tweet was removed for violating our content policy");
+            $user_id = $post->user_id;
+            $username = $post->username;
             
-            // Delete related data
-            $tables_to_delete = [
-                'likes' => 'tweetID',
-                'retweets' => 'tweetID', 
-                'comments' => 'tweetID',
-                'notifications' => 'target',
-                'reports' => 'tweet_id'
+            error_log("Found post owned by user: $username (ID: $user_id)");
+            
+            // Send notification to user
+            self::sendFlagNotification($tweet_id, $admin_id, "Your post was removed by admin for violating our content policy");
+            
+            // Delete from all related tables in correct order
+            $delete_operations = [
+                'likes' => 'DELETE FROM likes WHERE post_id = ?',
+                'retweets' => 'DELETE FROM retweets WHERE post_id = ? OR tweet_id = ? OR retweet_id = ?',
+                'comments' => 'DELETE FROM comments WHERE post_id = ?',
+                'notifications' => 'DELETE FROM notifications WHERE target = ?',
+                'reports' => 'DELETE FROM reports WHERE tweet_id = ?',
+                'tweets' => 'DELETE FROM tweets WHERE post_id = ?', // Delete from tweets table
+                'posts' => 'DELETE FROM posts WHERE id = ?' // Finally delete from posts table
             ];
             
-            foreach ($tables_to_delete as $table => $column) {
+            foreach ($delete_operations as $table => $query) {
                 try {
-                    $stmt = $db->prepare("DELETE FROM $table WHERE $column = ?");
-                    $stmt->execute([$tweet_id]);
+                    if ($table === 'retweets') {
+                        $stmt = $db->prepare($query);
+                        $stmt->execute([$tweet_id, $tweet_id, $tweet_id]);
+                    } else {
+                        $stmt = $db->prepare($query);
+                        $stmt->execute([$tweet_id]);
+                    }
+                    $rows = $stmt->rowCount();
+                    error_log("Deleted from $table: $rows rows");
                 } catch (PDOException $e) {
-                    // Ignore errors for tables that might not exist
-                    error_log("Delete error for table '$table': " . $e->getMessage());
+                    error_log("Delete from $table error: " . $e->getMessage());
+                    // Continue with other tables even if one fails
                 }
             }
             
-            // Delete the tweet itself
-            $stmt = $db->prepare("DELETE FROM tweets WHERE post_id = ?");
+            // Verify deletion from both tables
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM posts WHERE id = ?");
             $stmt->execute([$tweet_id]);
+            $posts_remaining = $stmt->fetch()->count;
             
-            // Also delete from posts table
-            $stmt = $db->prepare("DELETE FROM posts WHERE id = ?");
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM tweets WHERE post_id = ?");
             $stmt->execute([$tweet_id]);
+            $tweets_remaining = $stmt->fetch()->count;
             
-            // Log the action
-            self::logAction($admin_id, 'delete_tweet', "Deleted tweet #$tweet_id");
+            if ($posts_remaining == 0 && $tweets_remaining == 0) {
+                self::logAction($admin_id, 'delete_tweet', "Successfully deleted tweet #$tweet_id from user @$username (#$user_id)");
+                $db->commit();
+                error_log("Successfully deleted tweet #$tweet_id from both posts and tweets tables");
+                return true;
+            } else {
+                throw new Exception("Tweet deletion incomplete. Posts remaining: $posts_remaining, Tweets remaining: $tweets_remaining");
+            }
             
-            $db->commit();
-            return true;
         } catch (Exception $e) {
-            $db->rollBack();
+            if (isset($db)) {
+                $db->rollBack();
+            }
             error_log("Delete tweet error: " . $e->getMessage());
             return false;
         }
+    }
+    
+    // Alternative simple delete method
+    public static function simpleDeleteTweet($tweet_id, $admin_id) {
+        $db = self::getDB();
+        
+        try {
+            $db->beginTransaction();
+            
+            error_log("Simple deletion for tweet ID: " . $tweet_id);
+            
+            // Get user info for logging
+            $stmt = $db->prepare("SELECT p.user_id, u.username FROM posts p 
+                                JOIN users u ON p.user_id = u.id 
+                                WHERE p.id = ?");
+            $stmt->execute([$tweet_id]);
+            $post = $stmt->fetch(PDO::FETCH_OBJ);
+            
+            if (!$post) {
+                throw new Exception("Post not found");
+            }
+            
+            // Send notification
+            self::sendFlagNotification($tweet_id, $admin_id, "Your post was removed by admin");
+            
+            // Delete from tweets table first
+            $stmt = $db->prepare("DELETE FROM tweets WHERE post_id = ?");
+            $tweet_deleted = $stmt->execute([$tweet_id]);
+            error_log("Deleted from tweets: " . $stmt->rowCount() . " rows");
+            
+            // Then delete from posts table
+            $stmt = $db->prepare("DELETE FROM posts WHERE id = ?");
+            $post_deleted = $stmt->execute([$tweet_id]);
+            $post_rows = $stmt->rowCount();
+            error_log("Deleted from posts: " . $post_rows . " rows");
+            
+            if ($post_rows > 0) {
+                self::logAction($admin_id, 'delete_tweet', "Simply deleted tweet #$tweet_id");
+                $db->commit();
+                error_log("Simple delete successful for tweet #$tweet_id");
+                return true;
+            } else {
+                throw new Exception("No post was deleted");
+            }
+            
+        } catch (Exception $e) {
+            if (isset($db)) {
+                $db->rollBack();
+            }
+            error_log("Simple delete tweet error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    // Force delete method as backup
+    public static function forceDeleteTweet($tweet_id, $admin_id) {
+        $db = self::getDB();
+        
+        try {
+            $db->beginTransaction();
+            
+            error_log("Force deletion for tweet ID: " . $tweet_id);
+            
+            // Try to get user info
+            $stmt = $db->prepare("SELECT p.user_id, u.username FROM posts p 
+                                JOIN users u ON p.user_id = u.id 
+                                WHERE p.id = ?");
+            $stmt->execute([$tweet_id]);
+            $post = $stmt->fetch(PDO::FETCH_OBJ);
+            
+            if ($post) {
+                self::sendFlagNotification($tweet_id, $admin_id, "Your post was removed by admin");
+            }
+            
+            // Delete from all possible tables
+            $tables = [
+                'likes' => 'post_id',
+                'retweets' => 'post_id',
+                'comments' => 'post_id',
+                'notifications' => 'target',
+                'reports' => 'tweet_id',
+                'tweets' => 'post_id', // Critical: delete from tweets table
+                'posts' => 'id' // Critical: delete from posts table
+            ];
+            
+            $success = false;
+            
+            foreach ($tables as $table => $column) {
+                try {
+                    $stmt = $db->prepare("DELETE FROM $table WHERE $column = ?");
+                    $stmt->execute([$tweet_id]);
+                    $rows = $stmt->rowCount();
+                    error_log("Force deleted from $table: $rows rows");
+                    
+                    if ($table === 'posts' && $rows > 0) {
+                        $success = true;
+                    }
+                } catch (PDOException $e) {
+                    error_log("Force delete from $table error: " . $e->getMessage());
+                }
+            }
+            
+            if ($success) {
+                self::logAction($admin_id, 'force_delete_tweet', "Force deleted tweet #$tweet_id");
+                $db->commit();
+                error_log("Force delete successful for tweet #$tweet_id");
+                return true;
+            } else {
+                throw new Exception("Force delete failed - no posts were deleted");
+            }
+            
+        } catch (Exception $e) {
+            if (isset($db)) {
+                $db->rollBack();
+            }
+            error_log("Force delete tweet error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    public static function bulkDeleteTweets($tweet_ids, $admin_id) {
+        $db = self::getDB();
+        
+        try {
+            $db->beginTransaction();
+            $success_count = 0;
+            
+            foreach ($tweet_ids as $tweet_id) {
+                if (self::deleteTweet($tweet_id, $admin_id)) {
+                    $success_count++;
+                } else if (self::forceDeleteTweet($tweet_id, $admin_id)) {
+                    $success_count++;
+                }
+            }
+            
+            $db->commit();
+            return $success_count;
+            
+        } catch (Exception $e) {
+            $db->rollBack();
+            error_log("Bulk delete tweets error: " . $e->getMessage());
+            return 0;
+        }
+    }
+    
+    public static function getTweetStats($timeframe = 'today') {
+        $db = self::getDB();
+        $stats = [];
+        
+        try {
+            $date_condition = "";
+            switch ($timeframe) {
+                case 'today':
+                    $date_condition = "WHERE DATE(p.post_on) = CURDATE()";
+                    break;
+                case 'week':
+                    $date_condition = "WHERE p.post_on >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+                    break;
+                case 'month':
+                    $date_condition = "WHERE p.post_on >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)";
+                    break;
+                default:
+                    $date_condition = "";
+            }
+            
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM posts p $date_condition");
+            $stmt->execute();
+            $stats['total_tweets'] = $stmt->fetch()->count;
+            
+            $stmt = $db->prepare("
+                SELECT COUNT(*) as count 
+                FROM tweets t 
+                JOIN posts p ON t.post_id = p.id 
+                $date_condition AND t.img IS NOT NULL AND t.img != 'null'
+            ");
+            $stmt->execute();
+            $stats['tweets_with_images'] = $stmt->fetch()->count;
+            
+            $stmt = $db->prepare("
+                SELECT u.username, u.name, COUNT(p.id) as tweet_count
+                FROM posts p 
+                JOIN users u ON p.user_id = u.id 
+                $date_condition
+                GROUP BY p.user_id 
+                ORDER BY tweet_count DESC 
+                LIMIT 5
+            ");
+            $stmt->execute();
+            $stats['top_users'] = $stmt->fetchAll(PDO::FETCH_OBJ);
+            
+            if ($timeframe === 'today') {
+                $stmt = $db->prepare("
+                    SELECT HOUR(p.post_on) as hour, COUNT(*) as count
+                    FROM posts p 
+                    WHERE DATE(p.post_on) = CURDATE()
+                    GROUP BY HOUR(p.post_on)
+                    ORDER BY hour
+                ");
+                $stmt->execute();
+                $stats['hourly_distribution'] = $stmt->fetchAll(PDO::FETCH_OBJ);
+            }
+            
+        } catch (PDOException $e) {
+            error_log("Get tweet stats error: " . $e->getMessage());
+        }
+        
+        return $stats;
     }
     
     public static function deleteUser($user_id, $admin_id) {
@@ -400,7 +607,6 @@ class Admin {
         try {
             $db->beginTransaction();
             
-            // Get user info for logging
             $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
             $stmt->execute([$user_id]);
             $user = $stmt->fetch(PDO::FETCH_OBJ);
@@ -409,47 +615,58 @@ class Admin {
                 throw new Exception("User not found");
             }
             
-            // Get user's tweets first
-            $stmt = $db->prepare("SELECT post_id FROM tweets WHERE post_id = ?");
-            $stmt->execute([$user_id]);
-            $tweets = $stmt->fetchAll(PDO::FETCH_OBJ);
+            error_log("Starting deletion process for user #$user_id by admin #$admin_id");
             
-            // Delete each tweet and its related data
-            foreach ($tweets as $tweet) {
-                self::deleteTweet($tweet->post_id, $admin_id);
+            // Get all user's posts to delete them properly
+            $stmt = $db->prepare("SELECT id as post_id FROM posts WHERE user_id = ?");
+            $stmt->execute([$user_id]);
+            $posts = $stmt->fetchAll(PDO::FETCH_OBJ);
+            
+            error_log("Found " . count($posts) . " posts for user #$user_id");
+            
+            // Delete all user's tweets properly
+            foreach ($posts as $post) {
+                self::deleteTweet($post->post_id, $admin_id);
             }
             
-            // Delete user's other data
+            // Delete from all other tables
             $delete_queries = [
                 "DELETE FROM likes WHERE user_id = ?",
                 "DELETE FROM retweets WHERE user_id = ?",
                 "DELETE FROM comments WHERE user_id = ?",
-                "DELETE FROM notifications WHERE notify_for = ? OR target = ?",
+                "DELETE FROM notifications WHERE notify_for = ?",
+                "DELETE FROM notifications WHERE target = ?",
                 "DELETE FROM reports WHERE user_id = ?",
+                "DELETE FROM follow WHERE sender = ?",
+                "DELETE FROM follow WHERE receiver = ?",
+                "DELETE FROM posts WHERE user_id = ?",
                 "DELETE FROM users WHERE id = ?"
             ];
-            
-            // Delete from follow table
-            $delete_queries[] = "DELETE FROM follow WHERE sender = ? OR receiver = ?";
             
             foreach ($delete_queries as $query) {
                 try {
                     $stmt = $db->prepare($query);
-                    if (strpos($query, '? ?') !== false || strpos($query, 'sender') !== false || strpos($query, 'receiver') !== false) {
-                        $stmt->execute([$user_id, $user_id]);
-                    } else {
-                        $stmt->execute([$user_id]);
-                    }
+                    $stmt->execute([$user_id]);
+                    $affected = $stmt->rowCount();
+                    error_log("Query '$query' affected $affected rows");
                 } catch (PDOException $e) {
                     error_log("Delete error for query '$query': " . $e->getMessage());
                 }
             }
             
-            // Log the action
-            self::logAction($admin_id, 'delete_user', "Deleted user #$user_id ($user->username)");
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM users WHERE id = ?");
+            $stmt->execute([$user_id]);
+            $user_still_exists = $stmt->fetch()->count;
             
-            $db->commit();
-            return true;
+            if ($user_still_exists == 0) {
+                self::logAction($admin_id, 'delete_user', "Deleted user #$user_id ($user->username)");
+                $db->commit();
+                error_log("User #$user_id successfully deleted");
+                return true;
+            } else {
+                throw new Exception("User still exists after deletion attempt");
+            }
+            
         } catch (Exception $e) {
             $db->rollBack();
             error_log("Delete user error: " . $e->getMessage());
@@ -485,19 +702,15 @@ class Admin {
         $stats = [];
         
         try {
-            // Total users
             $stmt = $db->query("SELECT COUNT(*) as total FROM users");
             $stats['total_users'] = $stmt->fetch(PDO::FETCH_OBJ)->total;
             
-            // Total tweets
-            $stmt = $db->query("SELECT COUNT(*) as total FROM tweets");
+            $stmt = $db->query("SELECT COUNT(*) as total FROM posts");
             $stats['total_tweets'] = $stmt->fetch(PDO::FETCH_OBJ)->total;
             
-            // Pending reports
             $stmt = $db->query("SELECT COUNT(*) as total FROM reports WHERE status = 'pending'");
             $stats['pending_reports'] = $stmt->fetch(PDO::FETCH_OBJ)->total;
             
-            // Total likes
             try {
                 $stmt = $db->query("SELECT COUNT(*) as total FROM likes");
                 $stats['total_likes'] = $stmt->fetch(PDO::FETCH_OBJ)->total;
@@ -505,12 +718,20 @@ class Admin {
                 $stats['total_likes'] = 0;
             }
             
+            try {
+                $stmt = $db->prepare("SELECT COUNT(*) as total FROM posts WHERE DATE(post_on) = CURDATE()");
+                $stmt->execute();
+                $stats['today_tweets'] = $stmt->fetch()->total;
+            } catch (PDOException $e) {
+                $stats['today_tweets'] = 0;
+            }
+            
         } catch (PDOException $e) {
-            // Set default values if tables don't exist
             $stats['total_users'] = 0;
             $stats['total_tweets'] = 0;
             $stats['pending_reports'] = 0;
             $stats['total_likes'] = 0;
+            $stats['today_tweets'] = 0;
         }
         
         return $stats;
@@ -574,7 +795,6 @@ class Admin {
             }
         }
         
-        // Add reason column to notifications table if it doesn't exist
         try {
             $stmt = $db->query("SELECT COUNT(*) as count FROM information_schema.COLUMNS WHERE TABLE_NAME = 'notifications' AND COLUMN_NAME = 'reason'");
             $column_exists = $stmt->fetch()->count > 0;
@@ -586,7 +806,6 @@ class Admin {
             error_log("Add reason column error: " . $e->getMessage());
         }
         
-        // Create default admin user if doesn't exist
         try {
             $stmt = $db->prepare("SELECT COUNT(*) as count FROM admins WHERE username = 'admin'");
             $stmt->execute();
@@ -613,7 +832,7 @@ class Admin {
         try {
             $stmt = $db->prepare("
                 SELECT u.*, 
-                       (SELECT COUNT(*) FROM tweets WHERE post_id = u.id) as tweet_count,
+                       (SELECT COUNT(*) FROM posts WHERE user_id = u.id) as tweet_count,
                        (SELECT COUNT(*) FROM follow WHERE sender = u.id) as following_count,
                        (SELECT COUNT(*) FROM follow WHERE receiver = u.id) as followers_count
                 FROM users u 
@@ -635,9 +854,9 @@ class Admin {
                        p.user_id,
                        p.post_on as tweet_date,
                        u.username, u.name, u.img as user_img,
-                       (SELECT COUNT(*) FROM likes WHERE tweetID = t.post_id) as like_count,
-                       (SELECT COUNT(*) FROM retweets WHERE tweetID = t.post_id) as retweet_count,
-                       (SELECT COUNT(*) FROM comments WHERE tweetID = t.post_id) as comment_count
+                       (SELECT COUNT(*) FROM likes WHERE post_id = t.post_id) as like_count,
+                       (SELECT COUNT(*) FROM retweets WHERE post_id = t.post_id) as retweet_count,
+                       (SELECT COUNT(*) FROM comments WHERE post_id = t.post_id) as comment_count
                 FROM tweets t 
                 JOIN posts p ON t.post_id = p.id
                 JOIN users u ON p.user_id = u.id 
@@ -676,6 +895,6 @@ class Admin {
     }
 }
 
-// Initialize admin tables when class is loaded
+// Initialize admin tables
 Admin::createAdminTables();
 ?>

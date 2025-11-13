@@ -26,7 +26,7 @@
             <section class="twt-login">
                 <?php include 'includes/login.php';  ?>
                     <div class="slow-login">
-                        <img class="login-bird" src="<?php echo BASE_URL . "/assets/images/kabi.png"; ?>" alt="bird">
+                        <img class="login-bird" src="assets/images/kabi.png" alt="bird">
                         <button class="login-small-display signin-btn pri-btn">Log in</button>
                         <span class="front-para">See what’s happening in the world right now</span>
                         <span class="join">Join Kabi Today.</span>
@@ -39,9 +39,9 @@
   <div class="modal-dialog modal-dialog-centered" role="document">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 style="font-weight: 700;" class="modal-title" id="exampleModalLongTitle">Sign Up For Free</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
+        <!-- <h5 style="font-weight: 700;" class="modal-title" id="exampleModalLongTitle"></h5> -->
+        <!-- <button type="button" class="close" data-dismiss="modal" aria-label="Close"> -->
+          <!-- <span aria-hidden="true">&times;</span> -->
         </button>
       </div>
       <div class="modal-body">

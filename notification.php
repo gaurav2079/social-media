@@ -218,7 +218,7 @@
           <div class="search-container">
             <div class="input-group">
               <i class="fas fa-search search-icon"></i>
-              <input type="text" class="form-control search-input" placeholder="Search Twitter">
+              <input type="text" class="form-control search-input" placeholder="Search ">
               <div class="search-result"></div>
             </div>
           </div>

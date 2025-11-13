@@ -17,6 +17,6 @@ include 'classes/Admin.php';
 global $pdo;
 
 // Define base URL
-define("BASE_URL", "http://localhost/Social/");
+define("BASE_URL", "http://localhost/social-media/");
 
 ?>

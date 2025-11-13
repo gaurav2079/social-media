@@ -88,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="login-container">
                     <div class="login-header">
                         <h3><i class="fas fa-lock"></i> Admin Panel</h3>
-                        <p class="mb-0">Kabi Twitter Clone - TweetPHP Database</p>
+                        <p class="mb-0">Kabi  -  Database</p>
                     </div>
                     <div class="login-form">
                         <?php if ($error): ?>

@@ -21,18 +21,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($action) {
         case 'delete_user':
             $user_id = $_POST['user_id'] ?? '';
-            $admin_id = $_SESSION['admin_id'];
             
-            if (Admin::deleteUser($user_id, $admin_id)) {
-                $_SESSION['message'] = "User deleted successfully";
-            } else {
-                $_SESSION['error'] = "Failed to delete user";
+            // Get admin ID from session
+            $admin_id = $_SESSION['admin_id'] ?? $_SESSION['admin']->id ?? 1;
+            
+            // DIRECT DATABASE DELETION - SIMPLE APPROACH
+            try {
+                $db = new PDO("mysql:host=localhost;dbname=tweetphp;charset=utf8mb4", "root", "");
+                
+                // Start transaction
+                $db->beginTransaction();
+                
+                // Delete user from database
+                $stmt = $db->prepare("DELETE FROM users WHERE id = ?");
+                $result = $stmt->execute([$user_id]);
+                $affected_rows = $stmt->rowCount();
+                
+                if ($affected_rows > 0) {
+                    $_SESSION['message'] = "User deleted successfully!";
+                    $db->commit();
+                } else {
+                    $_SESSION['error'] = "User not found or already deleted!";
+                    $db->rollBack();
+                }
+                
+            } catch (Exception $e) {
+                $_SESSION['error'] = "Error deleting user: " . $e->getMessage();
             }
+            
+            // Redirect to prevent form resubmission
+            header("location: users.php?page=$page&search=" . urlencode($search));
+            exit();
             break;
     }
-    
-    header("location: users.php?page=$page&search=" . urlencode($search));
-    exit();
 }
 ?>
 <!DOCTYPE html>
@@ -65,6 +86,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .badge-stat {
             font-size: 0.8em;
+        }
+        .table th {
+            border-top: none;
+        }
+        .btn-action {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        .delete-form {
+            display: inline-block;
+            margin-left: 5px;
         }
     </style>
 </head>
@@ -105,19 +137,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
 
                     <?php if (isset($_SESSION['message'])): ?>
-                        <div class="alert alert-success"><?php echo $_SESSION['message']; unset($_SESSION['message']); ?></div>
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <i class="fas fa-check-circle"></i> 
+                            <?php echo $_SESSION['message']; unset($_SESSION['message']); ?>
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
                     <?php endif; ?>
 
                     <?php if (isset($_SESSION['error'])): ?>
-                        <div class="alert alert-danger"><?php echo $_SESSION['error']; unset($_SESSION['error']); ?></div>
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="fas fa-exclamation-circle"></i> 
+                            <?php echo $_SESSION['error']; unset($_SESSION['error']); ?>
+                            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                <span aria-hidden="true">&times;</span>
+                            </button>
+                        </div>
                     <?php endif; ?>
 
                     <!-- Search Form -->
                     <div class="card mb-4">
                         <div class="card-body">
                             <form method="GET" class="form-inline">
+                                <input type="hidden" name="page" value="1">
                                 <div class="form-group mr-2">
-                                    <input type="text" name="search" class="form-control" placeholder="Search users..." value="<?php echo htmlspecialchars($search); ?>">
+                                    <input type="text" name="search" class="form-control" placeholder="Search by username, name, or email..." value="<?php echo htmlspecialchars($search); ?>">
                                 </div>
                                 <button type="submit" class="btn btn-primary mr-2">
                                     <i class="fas fa-search"></i> Search
@@ -131,12 +176,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="card">
                         <div class="card-body">
                             <?php if (empty($users)): ?>
-                                <p class="text-muted">No users found</p>
+                                <div class="text-center py-4">
+                                    <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">No users found</p>
+                                    <?php if (!empty($search)): ?>
+                                        <a href="users.php" class="btn btn-primary">View All Users</a>
+                                    <?php endif; ?>
+                                </div>
                             <?php else: ?>
                                 <div class="table-responsive">
-                                    <table class="table table-striped">
-                                        <thead>
+                                    <table class="table table-striped table-hover">
+                                        <thead class="thead-dark">
                                             <tr>
+                                                <th>ID</th>
                                                 <th>User</th>
                                                 <th>Username</th>
                                                 <th>Email</th>
@@ -147,7 +199,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </thead>
                                         <tbody>
                                             <?php foreach ($users as $user): ?>
-                                                <tr>
+                                                <tr id="user-row-<?php echo $user->id; ?>">
+                                                    <td><?php echo $user->id; ?></td>
                                                     <td>
                                                         <div class="d-flex align-items-center">
                                                             <img src="../assets/images/users/<?php echo htmlspecialchars($user->img); ?>" 
@@ -155,16 +208,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                                  onerror="this.src='../assets/images/users/default.jpg'">
                                                             <div>
                                                                 <strong><?php echo htmlspecialchars($user->name); ?></strong>
+                                                                <?php if (!empty($user->bio)): ?>
+                                                                    <br><small class="text-muted"><?php echo htmlspecialchars(substr($user->bio, 0, 50)); ?><?php echo strlen($user->bio) > 50 ? '...' : ''; ?></small>
+                                                                <?php endif; ?>
                                                             </div>
                                                         </div>
                                                     </td>
                                                     <td>@<?php echo htmlspecialchars($user->username); ?></td>
                                                     <td><?php echo htmlspecialchars($user->email); ?></td>
                                                     <td>
-                                                        <span class="badge badge-primary badge-stat" title="Tweets">
+                                                        <span class="badge badge-primary badge-stat mr-1" title="Tweets">
                                                             <i class="fas fa-comment"></i> <?php echo $user->tweet_count ?? 0; ?>
                                                         </span>
-                                                        <span class="badge badge-info badge-stat" title="Following">
+                                                        <span class="badge badge-info badge-stat mr-1" title="Following">
                                                             <i class="fas fa-user-plus"></i> <?php echo $user->following_count ?? 0; ?>
                                                         </span>
                                                         <span class="badge badge-success badge-stat" title="Followers">
@@ -178,46 +234,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                         ?>
                                                     </td>
                                                     <td>
-                                                        <div class="btn-group">
-                                                            <a href="../<?php echo htmlspecialchars($user->username); ?>" 
-                                                               class="btn btn-sm btn-outline-primary" target="_blank">
+                                                        <div class="btn-group btn-group-sm">
+                                                            <a href="../profile.php?username=<?php echo htmlspecialchars($user->username); ?>" 
+                                                               class="btn btn-outline-primary btn-action" target="_blank" title="View Profile">
                                                                 <i class="fas fa-eye"></i> View
                                                             </a>
-                                                            <button class="btn btn-sm btn-outline-danger" 
-                                                                    data-toggle="modal" 
-                                                                    data-target="#deleteUserModal<?php echo $user->id; ?>">
-                                                                <i class="fas fa-trash"></i> Delete
-                                                            </button>
+                                                            <!-- SIMPLE DELETE FORM - NO JAVASCRIPT NEEDED -->
+                                                            <form method="POST" class="delete-form" onsubmit="return confirm('Are you sure you want to delete <?php echo addslashes($user->name); ?>? This will permanently remove the user and all their data.');">
+                                                                <input type="hidden" name="user_id" value="<?php echo $user->id; ?>">
+                                                                <input type="hidden" name="action" value="delete_user">
+                                                                <button type="submit" class="btn btn-outline-danger btn-action" title="Delete User">
+                                                                    <i class="fas fa-trash"></i> Delete
+                                                                </button>
+                                                            </form>
                                                         </div>
                                                     </td>
                                                 </tr>
-
-                                                <!-- Delete User Modal -->
-                                                <div class="modal fade" id="deleteUserModal<?php echo $user->id; ?>" tabindex="-1">
-                                                    <div class="modal-dialog">
-                                                        <div class="modal-content">
-                                                            <form method="POST">
-                                                                <div class="modal-header">
-                                                                    <h5 class="modal-title">Delete User</h5>
-                                                                    <button type="button" class="close" data-dismiss="modal">&times;</button>
-                                                                </div>
-                                                                <div class="modal-body">
-                                                                    <p>Are you sure you want to delete user <strong><?php echo htmlspecialchars($user->name); ?></strong>?</p>
-                                                                    <p class="text-danger">
-                                                                        <i class="fas fa-exclamation-triangle"></i>
-                                                                        This will permanently delete all their tweets, likes, and other data.
-                                                                    </p>
-                                                                </div>
-                                                                <div class="modal-footer">
-                                                                    <input type="hidden" name="user_id" value="<?php echo $user->id; ?>">
-                                                                    <input type="hidden" name="action" value="delete_user">
-                                                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                                                                    <button type="submit" class="btn btn-danger">Delete User</button>
-                                                                </div>
-                                                            </form>
-                                                        </div>
-                                                    </div>
-                                                </div>
                                             <?php endforeach; ?>
                                         </tbody>
                                     </table>
@@ -230,13 +262,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <nav aria-label="Page navigation" class="mt-4">
                         <ul class="pagination justify-content-center">
                             <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                                <a class="page-link" href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>">Previous</a>
+                                <a class="page-link" href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>">
+                                    <i class="fas fa-chevron-left"></i> Previous
+                                </a>
                             </li>
                             <li class="page-item active">
                                 <span class="page-link">Page <?php echo $page; ?></span>
                             </li>
-                            <li class="page-item">
-                                <a class="page-link" href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>">Next</a>
+                            <li class="page-item <?php echo empty($users) || count($users) < $limit ? 'disabled' : ''; ?>">
+                                <a class="page-link" href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>">
+                                    Next <i class="fas fa-chevron-right"></i>
+                                </a>
                             </li>
                         </ul>
                     </nav>

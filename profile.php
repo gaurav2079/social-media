@@ -167,7 +167,7 @@
                        <div class="col-xs-10">
                            <span class="home-name"> <?php echo $profileData->name; ?></span>
                            <p class="home-tweets-num">
-                              <?php echo Tweet::countTweets($profileData->id); ?> Tweets</p>
+                              <?php echo Tweet::countTweets($profileData->id); ?> Post</p>
                       </div>
                  </div>
 
@@ -352,7 +352,7 @@
                      <ul class="nav nav-tabs justify-content-center mt-4" id="myTab" role="tablist">
                        <li class="nav-item">
                          <a class="nav-link active" id="home-tab" data-toggle="tab" href="#home" role="tab" aria-controls="home" aria-selected="true">
-                           Tweets</a>
+                           Post</a>
                        </li>
                        <li class="nav-item">
                          <a class="nav-link" id="profile-tab" data-toggle="tab" href="#profile" role="tab" aria-controls="profile" aria-selected="false">
@@ -394,7 +394,7 @@
             <div class="input-group py-2 m-auto pr-5 position-relative">
 
             <i id="icon-search" class="fas fa-search tryy"></i>
-            <input type="text" class="form-control search-input"  placeholder="Search Twitter">
+            <input type="text" class="form-control search-input"  placeholder="Search ">
             <div class="search-result">
 
 

@@ -180,8 +180,8 @@ class Tweet extends User {
 
     public static function getTweetLinks($tweet){
         $tweet = preg_replace("/(https?:\/\/)([\w]+.)([\w\.]+)/", "<a href='$0' target='_blink'>$0</a>", $tweet);
-        $tweet = preg_replace("/#([\w]+)/", "<a class='hash-tweet' href='#'>$0</a>", $tweet);		
-        $tweet = preg_replace("/@([\w]+)/", "<a class='hash-tweet' href=' ".BASE_URL."$1'>$0</a>", $tweet);
+        $tweet = preg_replace("/#([\w]+)/", "<a class='hash-tweet' href='".BASE_URL."hashtag/$1'>$0</a>", $tweet);		
+        $tweet = preg_replace("/@([\w]+)/", "<a class='hash-tweet' href='".BASE_URL."$1'>$0</a>", $tweet);
         return $tweet;		
     }
     
@@ -379,7 +379,7 @@ class Tweet extends User {
         include 'includes/tweets.php';
     }
 
-       // DELETE TWEET FUNCTION - COMPLETE VERSION
+    // DELETE TWEET FUNCTION - COMPLETE VERSION
     public static function deleteTweet($tweet_id, $user_id) {
         try {
             $pdo = self::connect();
@@ -487,5 +487,99 @@ class Tweet extends User {
         }
     }
 
+    // FIXED: Update tweet method for your exact database structure
+    public static function updateTweet($tweet_id, $new_text) {
+        try {
+            $pdo = self::connect();
+            
+            error_log("Attempting to update tweet ID: " . $tweet_id);
+            
+            // Check if it's a tweet
+            if (self::isTweet($tweet_id)) {
+                error_log("Updating as regular tweet");
+                
+                // CORRECT QUERY: tweets table only has post_id, status, img - NO post_on column
+                $stmt = $pdo->prepare("UPDATE tweets SET status = ? WHERE post_id = ?");
+                $result = $stmt->execute([$new_text, $tweet_id]);
+                
+                error_log("Tweet update result: " . ($result ? 'success' : 'failed'));
+                error_log("Rows affected: " . $stmt->rowCount());
+                
+                if ($result && $stmt->rowCount() > 0) {
+                    // Update the post timestamp in posts table
+                    $post_stmt = $pdo->prepare("UPDATE posts SET post_on = NOW() WHERE id = ?");
+                    $post_result = $post_stmt->execute([$tweet_id]);
+                    error_log("Post timestamp update: " . ($post_result ? 'success' : 'failed'));
+                    return true;
+                }
+            } 
+            // Check if it's a retweet
+            else if (self::isRetweet($tweet_id)) {
+                error_log("Updating as retweet");
+                
+                // CORRECT QUERY: retweets table has post_id, retweet_msg, tweet_id, retweet_id - NO retweet_time column
+                $stmt = $pdo->prepare("UPDATE retweets SET retweet_msg = ? WHERE post_id = ?");
+                $result = $stmt->execute([$new_text, $tweet_id]);
+                
+                error_log("Retweet update result: " . ($result ? 'success' : 'failed'));
+                error_log("Rows affected: " . $stmt->rowCount());
+                
+                if ($result && $stmt->rowCount() > 0) {
+                    // Update the post timestamp in posts table
+                    $post_stmt = $pdo->prepare("UPDATE posts SET post_on = NOW() WHERE id = ?");
+                    $post_result = $post_stmt->execute([$tweet_id]);
+                    error_log("Post timestamp update: " . ($post_result ? 'success' : 'failed'));
+                    return true;
+                }
+            }
+            
+            error_log("Tweet update failed - no rows affected");
+            return false;
+            
+        } catch (PDOException $e) {
+            error_log("Update tweet error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    // FIXED: Get tweet for edit method
+    public static function getTweetForEdit($tweet_id) {
+        try {
+            $pdo = self::connect();
+            
+            // First check if it's a regular tweet
+            $stmt = $pdo->prepare("SELECT t.*, p.user_id, p.post_on, 'tweet' as type 
+                                 FROM tweets t 
+                                 JOIN posts p ON t.post_id = p.id 
+                                 WHERE t.post_id = ?");
+            $stmt->execute([$tweet_id]);
+            
+            if ($stmt->rowCount() > 0) {
+                $tweet = $stmt->fetch(PDO::FETCH_OBJ);
+                error_log("Found tweet: " . print_r($tweet, true));
+                return $tweet;
+            }
+            
+            // If not a regular tweet, check if it's a retweet
+            $stmt = $pdo->prepare("SELECT r.*, p.user_id, p.post_on, 'retweet' as type 
+                                 FROM retweets r 
+                                 JOIN posts p ON r.post_id = p.id 
+                                 WHERE r.post_id = ?");
+            $stmt->execute([$tweet_id]);
+            
+            if ($stmt->rowCount() > 0) {
+                $tweet = $stmt->fetch(PDO::FETCH_OBJ);
+                error_log("Found retweet: " . print_r($tweet, true));
+                return $tweet;
+            }
+            
+            error_log("Tweet not found in either tweets or retweets table: " . $tweet_id);
+            return false;
+            
+        } catch (PDOException $e) {
+            error_log("Get tweet for edit error: " . $e->getMessage());
+            return false;
+        }
+    }
 }
 ?>
