@@ -114,9 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 Default credentials: admin / admin123
                             </small>
                             <br>
-                            <small>
-                                <a href="setup_fix.php">Run Setup Again</a>
-                            </small>
+                           
                         </div>
                     </div>
                 </div>

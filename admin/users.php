@@ -192,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 <th>User</th>
                                                 <th>Username</th>
                                                 <th>Email</th>
-                                                <th>Stats</th>
+                                                
                                                 <th>Joined</th>
                                                 <th>Actions</th>
                                             </tr>
@@ -216,17 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     </td>
                                                     <td>@<?php echo htmlspecialchars($user->username); ?></td>
                                                     <td><?php echo htmlspecialchars($user->email); ?></td>
-                                                    <td>
-                                                        <span class="badge badge-primary badge-stat mr-1" title="Tweets">
-                                                            <i class="fas fa-comment"></i> <?php echo $user->tweet_count ?? 0; ?>
-                                                        </span>
-                                                        <span class="badge badge-info badge-stat mr-1" title="Following">
-                                                            <i class="fas fa-user-plus"></i> <?php echo $user->following_count ?? 0; ?>
-                                                        </span>
-                                                        <span class="badge badge-success badge-stat" title="Followers">
-                                                            <i class="fas fa-users"></i> <?php echo $user->followers_count ?? 0; ?>
-                                                        </span>
-                                                    </td>
+                                                   
                                                     <td>
                                                         <?php 
                                                         $joined = strtotime($user->registered_at ?? $user->created_at ?? 'now');

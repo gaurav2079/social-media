@@ -161,14 +161,7 @@ try {
                         <i class="fas fa-sign-out-alt mr-2"></i> Logout
                     </a>
                 </nav>
-                <div class="p-3 mt-auto">
-                    <div class="bg-dark p-2 rounded text-center">
-                        <small class="text-light">
-                            <i class="fas fa-user-shield mr-1"></i>
-                            <?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Admin'); ?>
-                        </small>
-                    </div>
-                </div>
+                
             </div>
 
             <!-- Main Content -->
